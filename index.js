@@ -6,8 +6,7 @@ const POLL_INTERVAL_MS = 60000;
 
 // List of Twickets event URLs
 const EVENTS = [
-  'https://www.twickets.live/en/event/1828748486091218944',
-  'https://www.twickets.live/en/event/1841424726103166976'
+  'https://www.twickets.live/en/event/1828748486091218944's
 ];
 
 async function scrapeEvent(url) {

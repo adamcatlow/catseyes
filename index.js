@@ -2,14 +2,16 @@ const puppeteer = require('puppeteer-core');
 const nodemailer = require('nodemailer');
 const fs = require('fs');
 
-const URL = 'https://www.twickets.live/en/event/1828748486091218944';
+const CHROME_PATH = process.env.CHROME_PATH || '/usr/bin/google-chrome-stable';
 const POLL_INTERVAL_MS = 60000;
-const CHROME_PATH = process.env.CHROME_PATH || '/usr/bin/chromium';
 
-async function scrape() {
-  const timestamp = new Date().toISOString();
-  console.log(`[${timestamp}] Checking for tickets...`);
+const EVENTS = [
+  'https://www.twickets.live/en/event/1828748486091218944',
+  'https://www.twickets.live/en/event/1841424726103166976',
+  // Add more URLs as needed
+];
 
+async function scrapeEvent(url) {
   const browser = await puppeteer.launch({
     executablePath: CHROME_PATH,
     headless: 'new',
@@ -20,8 +22,16 @@ async function scrape() {
   await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36');
 
   try {
-    await page.goto(URL, { waitUntil: 'networkidle2', timeout: 60000 });
-    await page.waitForSelector('#listings-found, #no-listings-found', { timeout: 15000 });
+    console.log(`\n[${new Date().toISOString()}] Checking: ${url}`);
+    await page.goto(url, { waitUntil: 'networkidle2', timeout: 60000 });
+
+    await page.waitForFunction(() => {
+      const spinner = document.querySelector('.event-spinner-container');
+      const spinnerVisible = spinner && window.getComputedStyle(spinner).display !== 'none';
+
+      const hasLoaded = document.querySelector('#listings-found') || document.querySelector('#no-listings-found');
+      return hasLoaded && !spinnerVisible;
+    }, { timeout: 20000 });
 
     const result = await page.evaluate(() => {
       const noListings = document.querySelector('#no-listings-found');
@@ -39,25 +49,20 @@ async function scrape() {
     });
 
     if (result.hasTickets) {
-      console.log('🎟️ Ticket detected — sending alert...');
-      const screenshotPath = 'ticket-alert.png';
+      console.log(`🎟️ Ticket found for ${url}`);
+      const screenshotPath = `ticket-${Date.now()}.png`;
       await page.screenshot({ path: screenshotPath });
 
       await sendEmail(
-        '🚨 Twickets: Ticket Available!',
-        `A ticket listing is now available.
-
-${result.ticketSummary}
-${result.tier}
-
-Link: ${URL}`,
-        screenshotPath
+          `🚨 Twickets: Ticket Available!`,
+          `A ticket is available:\n${result.ticketSummary}\n${result.tier}\n\n${url}`,
+          screenshotPath
       );
     } else {
-      console.log('⏳ No tickets available.');
+      console.log(`⏳ No tickets at ${url}`);
     }
   } catch (err) {
-    console.error('❌ Error during scrape:', err.message);
+    console.error(`❌ Error at ${url}:`, err.message);
   }
 
   await browser.close();
@@ -86,6 +91,12 @@ async function sendEmail(subject, text, screenshotPath) {
   await transporter.sendMail(mailOptions);
 }
 
-// Start polling
-scrape();
-setInterval(scrape, POLL_INTERVAL_MS);
+async function scrapeAllEvents() {
+  for (const url of EVENTS) {
+    await scrapeEvent(url);
+  }
+}
+
+// Run all on loop
+scrapeAllEvents();
+setInterval(scrapeAllEvents, POLL_INTERVAL_MS);

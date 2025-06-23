@@ -2,10 +2,11 @@
   "name": "twickets-watcher",
   "version": "1.0.0",
   "scripts": {
-    "start": "node index.js"
+    "start": "node index.js",
+    "postinstall": "echo Skipping Puppeteer download - using system Chromium"
   },
   "dependencies": {
-    "nodemailer": "^6.9.1",
-    "puppeteer": "^21.3.8"
+    "puppeteer-core": "^21.3.8",
+    "nodemailer": "^6.9.1"
   }
 }

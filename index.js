@@ -1,15 +1,17 @@
-const puppeteer = require('puppeteer');
+const puppeteer = require('puppeteer-core');
 const nodemailer = require('nodemailer');
 const fs = require('fs');
 
 const URL = 'https://www.twickets.live/en/event/1828748486091218944';
 const POLL_INTERVAL_MS = 60000;
+const CHROME_PATH = process.env.CHROME_PATH || '/usr/bin/chromium';
 
 async function scrape() {
   const timestamp = new Date().toISOString();
   console.log(`[${timestamp}] Checking for tickets...`);
 
   const browser = await puppeteer.launch({
+    executablePath: CHROME_PATH,
     headless: 'new',
     args: ['--no-sandbox', '--disable-setuid-sandbox']
   });

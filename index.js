@@ -1,14 +1,27 @@
 const puppeteer = require('puppeteer-core');
 const nodemailer = require('nodemailer');
 const fs = require('fs');
+const { execSync } = require('child_process');
 
-const CHROME_PATH = process.env.CHROME_PATH || '/usr/bin/google-chrome-stable';
 const POLL_INTERVAL_MS = 60000;
 
+// Dynamically find Chromium path
+function findChromePath() {
+  try {
+    return execSync('which chromium-browser || which chromium || which google-chrome-stable')
+        .toString().trim();
+  } catch {
+    return null;
+  }
+}
+
+const CHROME_PATH = findChromePath();
+
+// List of Twickets event URLs to monitor
 const EVENTS = [
   'https://www.twickets.live/en/event/1828748486091218944',
   'https://www.twickets.live/en/event/1841424726103166976',
-  // Add more URLs as needed
+  // Add more URLs here
 ];
 
 async function scrapeEvent(url) {
@@ -25,10 +38,10 @@ async function scrapeEvent(url) {
     console.log(`\n[${new Date().toISOString()}] Checking: ${url}`);
     await page.goto(url, { waitUntil: 'networkidle2', timeout: 60000 });
 
+    // Wait until spinner is hidden and content is injected
     await page.waitForFunction(() => {
       const spinner = document.querySelector('.event-spinner-container');
       const spinnerVisible = spinner && window.getComputedStyle(spinner).display !== 'none';
-
       const hasLoaded = document.querySelector('#listings-found') || document.querySelector('#no-listings-found');
       return hasLoaded && !spinnerVisible;
     }, { timeout: 20000 });
@@ -73,7 +86,7 @@ async function sendEmail(subject, text, screenshotPath) {
     service: 'gmail',
     auth: {
       user: process.env.EMAIL_USER,
-      pass: process.env.EMAIL_PASS,
+      pass: process.env.EMAIL_PASS
     }
   });
 
@@ -97,6 +110,6 @@ async function scrapeAllEvents() {
   }
 }
 
-// Run all on loop
+// Run immediately, then every minute
 scrapeAllEvents();
 setInterval(scrapeAllEvents, POLL_INTERVAL_MS);

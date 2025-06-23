@@ -1,9 +1,8 @@
 {
-  "name": "twickets-watcher",
+  "name": "cateyes-twickets-watcher",
   "version": "1.0.0",
   "scripts": {
     "start": "node index.js",
-    "postinstall": "echo Skipping Puppeteer download - using system Chromium"
   },
   "dependencies": {
     "puppeteer-core": "^21.3.8",

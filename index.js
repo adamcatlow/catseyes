@@ -1,6 +1,5 @@
 const puppeteer = require('puppeteer');
 const nodemailer = require('nodemailer');
-require('dotenv').config();
 
 const URLS_TO_WATCH = [
   'https://www.twickets.live/en/event/1828748486091218944',

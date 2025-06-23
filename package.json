@@ -2,7 +2,7 @@
   "name": "cateyes-twickets-watcher",
   "version": "1.0.0",
   "scripts": {
-    "start": "node index.js",
+    "start": "node index.js"
   },
   "dependencies": {
     "puppeteer-core": "^21.3.8",

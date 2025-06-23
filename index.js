@@ -1,8 +1,6 @@
-import puppeteer from 'puppeteer';
-import nodemailer from 'nodemailer';
-import dotenv from 'dotenv';
-
-dotenv.config();
+const puppeteer = require('puppeteer');
+const nodemailer = require('nodemailer');
+require('dotenv').config();
 
 const URLS_TO_WATCH = [
   'https://www.twickets.live/en/event/1828748486091218944',
@@ -15,8 +13,8 @@ async function sendNotification(url) {
   const transporter = nodemailer.createTransport({
     service: 'gmail',
     auth: {
-      user: process.env.EMAIL_USER,       // Your Gmail address
-      pass: process.env.EMAIL_PASS        // App password
+      user: process.env.EMAIL_USER,
+      pass: process.env.EMAIL_PASS
     }
   });
 
@@ -56,7 +54,7 @@ async function checkForTickets(url) {
   try {
     await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
 
-    // Accept cookie banner if visible
+    // Accept cookies
     try {
       await page.waitForSelector('.cc-btn.cc-allow', { timeout: 4000 });
       await page.click('.cc-btn.cc-allow');
@@ -65,11 +63,9 @@ async function checkForTickets(url) {
       console.log('ℹ️ No cookie banner found (or already dismissed)');
     }
 
-    // Try waiting for spinner to go away
+    // Wait for spinner or fallback
     try {
-      await page.waitForSelector('.event-spinner-container[hidden]', {
-        timeout: 8000
-      });
+      await page.waitForSelector('.event-spinner-container[hidden]', { timeout: 8000 });
     } catch {
       console.log('⚠️ Spinner may have not appeared or disappeared – continuing...');
     }

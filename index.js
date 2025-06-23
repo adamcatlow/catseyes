@@ -34,7 +34,7 @@ async function checkPage(page, url) {
       await dismissCookieBanner(page);
 
       // Wait for potential JS rendering (spinner, etc.)
-      await page.waitForTimeout(2000);
+      await new Promise(res => setTimeout(res, 2000));
 
       const pageText = await page.evaluate(() => document.body.innerText);
       const snippet = pageText.slice(0, 300).trim().replace(/\s+/g, ' ');

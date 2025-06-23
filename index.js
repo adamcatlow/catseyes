@@ -2,8 +2,7 @@ const puppeteer = require('puppeteer');
 const nodemailer = require('nodemailer');
 
 const URLS_TO_WATCH = [
-  'https://www.twickets.live/en/event/1828748486091218944',
-  'https://www.twickets.live/en/event/1841424726103166976'
+  'https://www.twickets.live/en/event/1828748486091218944'
 ];
 
 const CHECK_INTERVAL_MS = 60_000; // 1 minute

@@ -1,128 +1,107 @@
 const puppeteer = require('puppeteer');
 const nodemailer = require('nodemailer');
 
-const URLS_TO_WATCH = [
-  'https://www.twickets.live/en/event/1828748486091218944'
+const urls = [
+  'https://www.twickets.live/en/event/1828748486091218944',
+  'https://www.twickets.live/en/event/1841424726103166976',
 ];
 
-const CHECK_INTERVAL_MS = 60_000; // 1 minute
+const POLL_INTERVAL_MS = 60 * 1000; // every 1 minute
+const MAX_ATTEMPTS = 3;
 
-async function sendNotification(url) {
-  const transporter = nodemailer.createTransport({
-    service: 'gmail',
-    auth: {
-      user: process.env.EMAIL_USER,
-      pass: process.env.EMAIL_PASS
-    }
-  });
+const transporter = nodemailer.createTransport({
+  service: 'gmail',
+  auth: {
+    user: process.env.ALERT_EMAIL,
+    pass: process.env.ALERT_PASS,
+  },
+});
 
-  const mailOptions = {
-    from: process.env.EMAIL_USER,
-    to: process.env.EMAIL_TO,
-    subject: '🎟️ Twickets Ticket Available!',
-    text: `A ticket is now available: ${url}`,
-    html: `<p>A ticket is now available: <a href="${url}">${url}</a></p>`
-  };
-
-  try {
-    await transporter.sendMail(mailOptions);
-    console.log(`📧 Notification sent for ${url}`);
-  } catch (error) {
-    console.error(`❌ Email error at ${url}: ${error.message}`);
-  }
-}
-
-async function checkForTickets(url) {
-  const browser = await puppeteer.launch({
-    headless: 'new',
-    args: ['--no-sandbox', '--disable-setuid-sandbox']
-  });
-
-  const page = await browser.newPage();
-
-  await page.setUserAgent(
-      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
-      "(KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36"
-  );
-
-  await page.setExtraHTTPHeaders({
-    'Accept-Language': 'en-US,en;q=0.9'
-  });
-
-  try {
-    await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
-
-    // Accept cookies
+async function checkPage(browser, url) {
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
     try {
-      await page.waitForSelector('.cc-btn.cc-allow', { timeout: 4000 });
-      await page.click('.cc-btn.cc-allow');
-      console.log('🍪 Cookie banner accepted');
-    } catch {
-      console.log('ℹ️ No cookie banner found (or already dismissed)');
-    }
+      console.log(`\n[${new Date().toISOString()}] Checking: ${url} (attempt ${attempt})`);
+      const page = await browser.newPage();
+      await page.setUserAgent(
+          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36'
+      );
 
-    // Wait for spinner or fallback
-    try {
-      await page.waitForSelector('.event-spinner-container[hidden]', { timeout: 8000 });
-    } catch {
-      console.log('⚠️ Spinner may have not appeared or disappeared – continuing...');
-    }
+      await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
 
-    let foundTicket = false;
+      // 🟡 Handle Cookiebot banner directly in DOM (non-iframe)
+      try {
+        await page.waitForSelector('#CybotCookiebotDialogBodyLevelButtonLevelOptinAllowAll', {
+          timeout: 5000,
+        });
+        await page.click('#CybotCookiebotDialogBodyLevelButtonLevelOptinAllowAll');
+        console.log('✅ Cookie consent accepted');
+        await page.waitForTimeout(500); // let the page settle
+      } catch {
+        console.log('ℹ️ Cookie banner not found or already dismissed');
+      }
 
-    for (let i = 0; i < 3; i++) {
-      console.log(`[${new Date().toISOString()}] Checking: ${url} (attempt ${i + 1})`);
+      // 🌀 Optional spinner wait
+      try {
+        await page.waitForSelector('.spinner', { timeout: 5000 });
+        await page.waitForSelector('.spinner', { hidden: true, timeout: 10000 });
+      } catch {
+        console.warn('⚠️ Spinner did not appear or took too long – continuing...');
+      }
 
+      // 📖 Check text content
       const pageText = await page.evaluate(() => document.body.innerText);
-      console.log('📝 Page Text Preview:', pageText.slice(0, 300));
+      console.log(`📝 Page Text Preview: ${pageText.slice(0, 300)}\n`);
 
-      const hasBuyButton = await page.$('.buy-button');
-      const hasSorryMessage = await page.evaluate(() => {
-        const text = document.body.innerText;
-        return (
-            text.includes("Sorry, we don't currently have any tickets") ||
-            text.includes("no results found") ||
-            text.toLowerCase().includes("please set up an alert")
-        );
-      });
+      if (pageText.includes("Sorry, we don't currently have any tickets")) {
+        await page.close();
+        return false;
+      }
 
-      if (hasBuyButton) {
+      const buyButton = await page.$('.buy-button.button.dark');
+      if (buyButton) {
         console.log(`🎟️ Ticket found for ${url}`);
         await sendNotification(url);
-        foundTicket = true;
-        break;
+        await page.close();
+        return true;
       }
 
-      if (hasSorryMessage) {
-        console.log(`🚫 No tickets available yet for ${url}`);
-        break;
-      }
-
-      await new Promise(res => setTimeout(res, 2000));
+      await page.close();
+    } catch (err) {
+      console.error(`❌ Error at ${url}: ${err.message}`);
     }
+  }
 
-    if (!foundTicket) {
-      const html = await page.content();
-      console.log(`⚠️ Timeout or unrecognised page state at ${url}`);
-      if (!html.includes("buy-button") && !html.includes("Sorry")) {
-        console.log("🧐 Raw HTML lacks known indicators – possible layout shift or blocking.");
-      }
-    }
+  console.warn(`⚠️ Timeout or unrecognised page state at ${url}`);
+  return false;
+}
+
+async function sendNotification(url) {
+  try {
+    await transporter.sendMail({
+      from: `"Ticket Watcher" <${process.env.ALERT_EMAIL}>`,
+      to: process.env.ALERT_TO,
+      subject: '🎟️ Ticket Available!',
+      text: `A ticket is now available at: ${url}`,
+    });
+    console.log(`📧 Notification sent for ${url}`);
   } catch (err) {
-    console.error(`❌ Error at ${url}: ${err.message}`);
-  } finally {
-    await browser.close();
+    console.error(`❌ Email error: ${err.message}`);
   }
 }
 
-async function runWatcher() {
-  for (const url of URLS_TO_WATCH) {
-    await checkForTickets(url);
+(async () => {
+  const browser = await puppeteer.launch({
+    headless: true,
+    args: ['--no-sandbox'],
+    executablePath: process.env.CHROME_PATH || undefined,
+  });
+
+  console.log('🚀 Ticket Watcher started');
+
+  while (true) {
+    for (const url of urls) {
+      await checkPage(browser, url);
+    }
+    await new Promise(res => setTimeout(res, POLL_INTERVAL_MS));
   }
-}
-
-// Initial run
-runWatcher();
-
-// Repeat every X minutes
-setInterval(runWatcher, CHECK_INTERVAL_MS);
+})();

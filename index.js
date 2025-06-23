@@ -1,32 +1,17 @@
-const puppeteer = require('puppeteer-core');
+const puppeteer = require('puppeteer');
 const nodemailer = require('nodemailer');
 const fs = require('fs');
-const { execSync } = require('child_process');
 
 const POLL_INTERVAL_MS = 60000;
 
-// Dynamically find Chromium path
-function findChromePath() {
-  try {
-    return execSync('which chromium-browser || which chromium || which google-chrome-stable')
-        .toString().trim();
-  } catch {
-    return null;
-  }
-}
-
-const CHROME_PATH = findChromePath();
-
-// List of Twickets event URLs to monitor
+// List of Twickets event URLs
 const EVENTS = [
   'https://www.twickets.live/en/event/1828748486091218944',
-  'https://www.twickets.live/en/event/1841424726103166976',
-  // Add more URLs here
+  'https://www.twickets.live/en/event/1841424726103166976'
 ];
 
 async function scrapeEvent(url) {
   const browser = await puppeteer.launch({
-    executablePath: CHROME_PATH,
     headless: 'new',
     args: ['--no-sandbox', '--disable-setuid-sandbox']
   });
@@ -38,7 +23,7 @@ async function scrapeEvent(url) {
     console.log(`\n[${new Date().toISOString()}] Checking: ${url}`);
     await page.goto(url, { waitUntil: 'networkidle2', timeout: 60000 });
 
-    // Wait until spinner is hidden and content is injected
+    // Wait until spinner is hidden and content is ready
     await page.waitForFunction(() => {
       const spinner = document.querySelector('.event-spinner-container');
       const spinnerVisible = spinner && window.getComputedStyle(spinner).display !== 'none';
@@ -110,6 +95,6 @@ async function scrapeAllEvents() {
   }
 }
 
-// Run immediately, then every minute
+// Run immediately and repeat
 scrapeAllEvents();
 setInterval(scrapeAllEvents, POLL_INTERVAL_MS);

@@ -1,99 +1,93 @@
 const puppeteer = require('puppeteer');
 const nodemailer = require('nodemailer');
-const fs = require('fs');
 
-const POLL_INTERVAL_MS = 60000;
-
-// List of Twickets event URLs
-const EVENTS = [
-  'https://www.twickets.live/en/event/1828748486091218944's
+// List your Twickets event URLs here
+const urlsToWatch = [
+  'https://www.twickets.live/en/event/1828748486091218944'
 ];
 
-async function scrapeEvent(url) {
-  const browser = await puppeteer.launch({
-    headless: 'new',
-    args: ['--no-sandbox', '--disable-setuid-sandbox']
-  });
+// Email config (Gmail App Password required)
+const transporter = nodemailer.createTransport({
+  service: 'gmail',
+  auth: {
+    user: process.env.GMAIL_USER,
+    pass: process.env.GMAIL_APP_PASSWORD,
+  },
+});
 
-  const page = await browser.newPage();
-  await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36');
+async function sendEmailNotification(url) {
+  const mailOptions = {
+    from: `"Twickets Watcher" <${process.env.GMAIL_USER}>`,
+    to: process.env.ALERT_EMAIL,
+    subject: '🎟️ Ticket Found!',
+    text: `Tickets available at: ${url}`,
+  };
 
   try {
-    console.log(`\n[${new Date().toISOString()}] Checking: ${url}`);
-    await page.goto(url, { waitUntil: 'networkidle2', timeout: 60000 });
+    await transporter.sendMail(mailOptions);
+    console.log(`📧 Email sent for ${url}`);
+  } catch (err) {
+    console.error(`❌ Email error for ${url}:`, err.message);
+  }
+}
 
-    // Wait until spinner is hidden and content is ready
-    await page.waitForFunction(() => {
-      const spinner = document.querySelector('.event-spinner-container');
-      const spinnerVisible = spinner && window.getComputedStyle(spinner).display !== 'none';
-      const hasLoaded = document.querySelector('#listings-found') || document.querySelector('#no-listings-found');
-      return hasLoaded && !spinnerVisible;
-    }, { timeout: 20000 });
+async function checkForTickets(url) {
+  const browser = await puppeteer.launch({
+    headless: 'new',
+    args: ['--no-sandbox', '--disable-setuid-sandbox'],
+  });
+  const page = await browser.newPage();
 
-    const result = await page.evaluate(() => {
-      const noListings = document.querySelector('#no-listings-found');
-      const noListingsVisible = noListings && window.getComputedStyle(noListings).display !== 'none';
+  try {
+    console.log(`[${new Date().toISOString()}] Checking: ${url}`);
+    await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
 
-      const buyButton = document.querySelector('a.buy-button.button.dark');
-      const ticketSummary = document.querySelector('.no-of-ticket-summary')?.innerText || 'Ticket found';
-      const tier = document.querySelector('.tier-name')?.innerText || 'Unknown tier';
+    // Optional: Wait for spinner if it shows
+    try {
+      await page.waitForSelector('.event-spinner-container', { timeout: 3000 });
+      await page.waitForSelector('.event-spinner-container[hidden]', { timeout: 8000 });
+    } catch (_) {
+      // Spinner might not appear or not disappear, fallback to retries
+    }
 
-      return {
-        hasTickets: !noListingsVisible && !!buyButton,
-        ticketSummary,
-        tier
-      };
-    });
-
-    if (result.hasTickets) {
-      console.log(`🎟️ Ticket found for ${url}`);
-      const screenshotPath = `ticket-${Date.now()}.png`;
-      await page.screenshot({ path: screenshotPath });
-
-      await sendEmail(
-          `🚨 Twickets: Ticket Available!`,
-          `A ticket is available:\n${result.ticketSummary}\n${result.tier}\n\n${url}`,
-          screenshotPath
+    // Retry page evaluation up to 3 times
+    let foundValidState = false;
+    for (let i = 0; i < 3; i++) {
+      const hasBuyButton = await page.$('.buy-button');
+      const hasSorry = await page.evaluate(() =>
+          document.body.innerText.includes("Sorry, we don't currently have any tickets")
       );
-    } else {
-      console.log(`⏳ No tickets at ${url}`);
+
+      if (hasBuyButton) {
+        console.log(`🎟️ Ticket found for ${url}`);
+        await sendEmailNotification(url);
+        foundValidState = true;
+        break;
+      }
+
+      if (hasSorry) {
+        console.log(`❌ No tickets available for ${url}`);
+        foundValidState = true;
+        break;
+      }
+
+      await new Promise((r) => setTimeout(r, 2000));
+    }
+
+    if (!foundValidState) {
+      console.log(`⚠️ Timeout or unrecognised page state at ${url}`);
     }
   } catch (err) {
     console.error(`❌ Error at ${url}:`, err.message);
-  }
-
-  await browser.close();
-}
-
-async function sendEmail(subject, text, screenshotPath) {
-  const transporter = nodemailer.createTransport({
-    service: 'gmail',
-    auth: {
-      user: process.env.EMAIL_USER,
-      pass: process.env.EMAIL_PASS
-    }
-  });
-
-  const mailOptions = {
-    from: `"Twickets Watcher" <${process.env.EMAIL_USER}>`,
-    to: process.env.EMAIL_TO,
-    subject,
-    text,
-    attachments: [{
-      filename: 'ticket-alert.png',
-      path: screenshotPath
-    }]
-  };
-
-  await transporter.sendMail(mailOptions);
-}
-
-async function scrapeAllEvents() {
-  for (const url of EVENTS) {
-    await scrapeEvent(url);
+  } finally {
+    await browser.close();
   }
 }
 
-// Run immediately and repeat
-scrapeAllEvents();
-setInterval(scrapeAllEvents, POLL_INTERVAL_MS);
+function runWatcher() {
+  urlsToWatch.forEach((url) => checkForTickets(url));
+}
+
+// Run immediately and then every minute
+runWatcher();
+setInterval(runWatcher, 60 * 1000);

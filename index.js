@@ -33,17 +33,26 @@ async function checkForTickets(url) {
     headless: "new",
     args: ["--no-sandbox", "--disable-setuid-sandbox"]
   });
+
   const page = await browser.newPage();
+
+  await page.setUserAgent(
+      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
+      "(KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36"
+  );
+
+  await page.setExtraHTTPHeaders({
+    "Accept-Language": "en-US,en;q=0.9"
+  });
 
   try {
     await page.goto(url, { waitUntil: "domcontentloaded", timeout: 30000 });
 
-    // Wait for spinner to hide (up to 8s)
     try {
       await page.waitForSelector(".event-spinner-container[hidden]", {
         timeout: 8000
       });
-    } catch (e) {
+    } catch {
       console.log("⚠️ Spinner may have not appeared or disappeared – continuing...");
     }
 
@@ -80,8 +89,7 @@ async function checkForTickets(url) {
         break;
       }
 
-      // Wait 2s before retrying
-      await page.waitForTimeout(2000);
+      await new Promise(res => setTimeout(res, 2000));
     }
 
     if (!foundTicket) {
